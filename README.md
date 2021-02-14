@@ -1,1 +1,2 @@
-# DDQN
+# SignalEnv
+Customized gym environment
