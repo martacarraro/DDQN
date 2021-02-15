@@ -50,9 +50,9 @@ class SignalEnv(gym.Env):
 	STDEV2 = 6
 
 	def __init__(self):
-		#self.seed(0) # a cosa serve? non ottengo gli stessi risultati
 
-		[self.x, self.signal] = generate_signal(seed=0) # self.x and self.signal are <class 'numpy.ndarray'>
+		# self.x and self.signal are <class 'numpy.ndarray'>
+		[self.x, self.signal] = generate_signal(seed=0)
 		self.signal_len = len(self.signal)
 
 
@@ -154,7 +154,7 @@ class SignalEnv(gym.Env):
 		self.dev = 1
 		return (self.agent_pos, self.dev)  # reward, done, info can't be included
 
-	
+
 	def seed(self, seed=None):
 		self.np_random, seed = seeding.np_random(seed)
 		return [seed]
@@ -200,7 +200,7 @@ def generate_signal(seed=0):
 
 
 
-
+'''
 #check if the env works
 if __name__ == "__main__":
 	[x, signal] = generate_signal()
@@ -224,3 +224,4 @@ if __name__ == "__main__":
 	plt.plot(x,signal)
 	plt.grid()
 	plt.show()
+'''
