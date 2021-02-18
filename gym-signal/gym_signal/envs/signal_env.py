@@ -3,7 +3,10 @@ from gym import error, spaces, utils
 from gym.utils import seeding
 # to use generate_signal function
 import numpy as np
+import statistics
+import matplotlib
 import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
 
 
 
@@ -46,8 +49,8 @@ class SignalEnv(gym.Env):
 	RIGHT_1 = 3
 	RIGHT_2 = 4
 
-	STDEV1 = 5
-	STDEV2 = 6
+	DELTA1 = 5
+	DELTA2 = 6
 
 	def __init__(self):
 
@@ -59,9 +62,9 @@ class SignalEnv(gym.Env):
 		self.observation_space = spaces.Discrete(self.signal_len)
 		print('States space:', self.observation_space)
 		n_actions_mean = 5
-		n_actions_devstd = 2
-		#self.action_space = spaces.Tuple([spaces.Discrete(n_actions_mean), spaces.Discrete(n_actions_devstd)])
-		self.action_space = spaces.Discrete(n_actions_mean + n_actions_devstd)
+		n_actions_d = 2
+		#self.action_space = spaces.Tuple([spaces.Discrete(n_actions_mean), spaces.Discrete(n_actions_d)])
+		self.action_space = spaces.Discrete(n_actions_mean + n_actions_d)
 		print('Actions space:', self.action_space)
 		print('type:', type(self.action_space))
 
@@ -71,7 +74,7 @@ class SignalEnv(gym.Env):
 
 		# Initialize the agent position at the beginning of the signal
 		self.agent_pos = 0
-		self.dev = self.STDEV1
+		self.d = self.DELTA1
 
 
 
@@ -97,35 +100,36 @@ class SignalEnv(gym.Env):
 		# Compute action--------------------------------------------------------
 		if action == self.RIGHT_2:
 			self.agent_pos = self.agent_pos + 2
-			self.dev = self.dev
+			self.d = self.d
 		elif action == self.RIGHT_1:
 			self.agent_pos = self.agent_pos + 1
-			self.dev = self.dev
+			self.d = self.d
 		elif action == self.STAY:
 			self.agent_pos = self.agent_pos
-			self.dev = self.dev
+			self.d = self.d
 		elif action == self.LEFT_1:
 			self.agent_pos = self.agent_pos - 1
-			self.dev = self.dev
+			self.d = self.d
 		elif action == self.LEFT_2:
 			self.agent_pos = self.agent_pos - 2
-			self.dev = self.dev
-		elif action == self.STDEV1:
+			self.d = self.d
+		elif action == self.DELTA1:
 			self.agent_pos = self.agent_pos
-			self.dev = 1
-		elif action == self.STDEV2:
+			self.d = 1
+		elif action == self.DELTA2:
 			self.agent_pos = self.agent_pos
-			self.dev = 2
+			self.d = 2
 		else:
 			raise ValueError("Received invalid action={} which is not part of the action space".format(action))
 
 		# Account for the boundaries of the grid
 		self.agent_pos = np.clip(self.agent_pos, 0, self.signal_len - 1)
-		observation = (self.agent_pos,self.dev)
+		observation = (self.agent_pos,self.d)
 
 		# Reward given by the function "compute_reward"-------------------------
-		idx_max = self.agent_pos + 3*self.dev
-		idx_min = self.agent_pos - 3*self.dev
+		'''
+		idx_max = self.agent_pos + self.dev
+		idx_min = self.agent_pos - self.dev
 
 		# accont for the boundaries of the signal
 		if idx_min < 0: idx_min = 0
@@ -134,9 +138,32 @@ class SignalEnv(gym.Env):
 		max = self.signal[idx_max]
 		min = self.signal[idx_min]
 		reward = max - min
+		'''
+		idx_max = self.agent_pos + self.d
+		idx_min = self.agent_pos - self.d
 
-		# Are we at the end of the signal?--------------------------------------
+		# select intervals around borders
+		idx_max_interval = [idx_max-2, idx_max-1,idx_max,idx_max+1,idx_max+2]
+		idx_min_interval = [idx_min-2, idx_min-1,idx_min,idx_min+1,idx_min+2]
+
+		# account for boundaries
+		#(remove from the intervals all the values < 0 and >= max length of the signal)
+		idx_max_interval = [item for item in idx_max_interval if (item >= 0) & (item < self.signal_len)]
+		idx_min_interval = [item for item in idx_min_interval if (item >= 0) & (item < self.signal_len)]
+
+		# select the value of the signal in the two intervals
+		max_signal = self.signal[idx_max_interval]
+		min_signal = self.signal[idx_min_interval]
+
+		# calculate RMS of the signal in the two intervals
+		rms_max = np.sqrt(np.mean(max_signal**2))
+		rms_min = np.sqrt(np.mean(min_signal**2))
+
+		reward = rms_max - rms_min
+
+		# When we make the episode end?-----------------------------------------
 		done = bool(self.agent_pos == (self.signal_len - 1))
+
 
 		# Additional info, not necessary----------------------------------------
 		info = {}
@@ -151,8 +178,8 @@ class SignalEnv(gym.Env):
         """
 		# Initialize the agent position at the beginning of the signal
 		self.agent_pos = 0
-		self.dev = 1
-		return (self.agent_pos, self.dev)  # reward, done, info can't be included
+		self.d = 1
+		return (self.agent_pos, self.d)  # reward, done, info can't be included
 
 
 	def seed(self, seed=None):
@@ -160,47 +187,24 @@ class SignalEnv(gym.Env):
 		return [seed]
 
 
-	def compute_reward(self):
-		"""
-		Considering the agent a truncated gaussian in [-3dev +3dev]. The reward
-		is the difference between the signal value at mean+3dev - the signal
-		value at mean-3dev. Since I'm interested in finiding the activation phase
-		of the muscle contraction, the gaussian will not have the contraction on
-		the left and will have it on the right --> max - min = positive reward
-		"""
-		idx_max = self.agent_pos + 3*self.dev
-		idx_min = self.agent_pos - 3*self.dev
-
-		# accont for the boundaries of the signal
-		if idx_min < 0: idx_min = 0
-		if idx_max > self.signal_len-1: idx_max = self.signal_len - 1
-
-		max = self.signal[idx_max]
-		min = self.signal[idx_min]
-		return max - min
-
-
-
-
-
-
-
 
 def generate_signal(seed=0):
-	x = np.linspace(0, 50, 50) #start value of the sequence, end value of the seqence, number of samples to generate. Default is 50.
+	x = np.linspace(0, 100, 100) #start value of the sequence, end value of the seqence, number of samples to generate. Default is 50.
 	mask1 = (x>=10) & (x<=17)
 	mask2 = (x>=28) & (x<=35)
+	mask3 = (x>=64) & (x<=77)
+	mask4 = (x>=88) & (x<=93)
 
-	y = np.where(mask1, 20, 0) + np.where(mask2, 10, 0)
+	y = np.where(mask1, 20, 0) + np.where(mask2, 10, 0) + np.where(mask3, 30, 0) + np.where(mask4, 5, 0)
 	np.random.seed(seed)
-	noise = np.random.normal(0,0.5,50)
+	noise = np.random.normal(0,0.5,100)
 
 	return [x,y + noise]
 
 
 
 
-'''
+
 #check if the env works
 if __name__ == "__main__":
 	[x, signal] = generate_signal()
@@ -208,20 +212,61 @@ if __name__ == "__main__":
 	env = SignalEnv()
 
 	obs = env.reset()
-	print(obs)
+	print("initial state:", obs)
 
-	n_steps = 10000
+	# initialize list to plot of the rewards
+	idx = []
+	rewards = []
+
+	n_steps = 1000000
 	for step in range(n_steps):
 		print("Step {}".format(step+1))
 		action = np.random.randint(7)
 		obs,reward,done,_ = env.step(action)
 		print('obs = ', obs, 'reward = ', reward, 'done = ', done)
+
+		#append infos to plot the rewards
+		idx.append(obs[0])
+		rewards.append(reward)
+
 		if done:
 			print('end signal')
 			break
 
 
-	plt.plot(x,signal)
-	plt.grid()
+
+
+# PLOT SIGNAL and REWARDS-------------------------------------------------------
+
+
+	idx = np.array(idx)
+	rewards = np.array(rewards)
+	mean_rewards = []
+	std_rewards = []
+	for state in range(100):
+		indexes = np.where(idx==state)
+		if len(indexes[0]) != 0: #check if the list is not empty
+			mean_reward = np.mean(rewards[indexes])
+			std_reward = np.std(rewards[indexes])
+		else:
+			mean_reward = np.nan
+			std_reward = np.nan
+		#print(mean_reward)
+		#print(std_reward)
+		mean_rewards.append(mean_reward)
+		std_rewards.append(std_reward)
+
+
+
+	# plot the signal and the reward values
+	fig, ax = plt.subplots(figsize=(100, 16))
+	plt.plot(x,signal,label='signal')
+	plt.errorbar(x,mean_rewards,std_rewards, linestyle='None', marker='s', label="rewards(mean $\pm$ devstd)")
+	ax.set_xlim(0, 100)
+	ax.xaxis.set_major_locator(ticker.MultipleLocator(5))
+	# Turn grid on for both major and minor ticks and style minor slightly
+	# differently.
+	ax.grid(which='major', color='#CCCCCC', linestyle='--')
+	ax.grid(which='minor', color='#CCCCCC', linestyle=':')
+	ax.legend()
 	plt.show()
-'''
